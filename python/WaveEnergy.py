@@ -1,7 +1,7 @@
 # Marine InVEST: Wave Energy Model
-# Authors: Gregg Verutes, CK Kim, Apollo Xi, Mike Papenfus
+# Authors: CK Kim, Gregg Verutes, Apollo Yi, Mike Papenfus
 # Coded for ArcGIS 9.3 and 10
-# 07/07/11
+# 01/17/12
 
 # import modules
 import sys, string, os, datetime
@@ -96,10 +96,6 @@ try:
         gp.AddField_management(FileName, FieldName, Type, Precision, Scale, "", "", "NON_NULLABLE", "NON_REQUIRED", "")
         return FileName
 
-    def checkGeometry(thedata, Type, Message):
-        if gp.Describe(thedata).ShapeType <> Type:
-            raise Exception, "\nInvalid input: "+thedata+"\n"+Message+" must be of geometry type "+Type+"."
-
     def checkDatum(thedata):
         desc = gp.describe(thedata)
         SR = desc.SpatialReference
@@ -144,7 +140,6 @@ try:
 
     # checks of AOI and DEM
     if AOI:
-        checkGeometry(AOI, "Polygon", "Area of Interest (AOI)")
         checkDatum(AOI)
         projection = grabProjection(AOI)
     checkDatum(DEM)
@@ -180,8 +175,8 @@ try:
         outputws = gp.workspace + os.sep + "Output" + os.sep
         interws = gp.workspace + os.sep + "intermediate" + os.sep
         
-        g = 9.81    # meter / second square
-        d = 1028    # water density: kilogram / cubic meter
+        g = 9.81 # meter / second square
+        d = 1028 # water density: kilogram / cubic meter
         alfa = 0.86 # wave period parameter
 
         # local analysis
@@ -241,6 +236,7 @@ try:
         outputNPV_rc = outputws + "npv_rc"
         GridPt_prj = outputws + "GridPt_prj.shp"
         LandPts_prj = outputws + "LandPts_prj.shp"
+        netval_yr = outputws + "netval_yr" ## FIX FOR CK
     
     except:
         gp.AddError("Error configuring local variables: " + gp.GetMessages())
@@ -299,17 +295,34 @@ try:
 
     # calculate captured wave energy    
     def CWEcalc(WaveData_clipZ, SeastateTxt, index_Tp, index_Hs, x_array, y_array, z_array, PointCount):
+        count = 0
         # run through wave data and populate array with point index values: I, J
-        PointArray = []
-        PointList = []
-        cur = gp.UpdateCursor(WaveData_clipZ, "", "", "I; J") ## change
+        PtStrList = []
+        PtTxtList = []
+        FIDList = []
+        CapWEList = [0]*PointCount
+        cur = gp.UpdateCursor(WaveData_clipZ, "", "", "I; J")
         row = cur.Next()
         while row:
-            PointList.append(int(row.GetValue("I")))
-            PointList.append(int(row.GetValue("J")))
-            PointList.append(0.0)
-            PointArray.append(PointList)
-            PointList = []
+            valueI = int(row.GetValue("I"))
+            valueJ = int(row.GetValue("J"))
+            PtStrList.append("I = " +str(row.GetValue("I"))+" AND J = "+str(row.GetValue("J")))
+            PtTxtString = 'I,'
+            if valueI < 10:
+                PtTxtString = PtTxtString + "  "+str(valueI)
+            elif valueI >= 10 and valueI < 100:
+                PtTxtString = PtTxtString + " "+str(valueI)
+            else:
+                PtTxtString = PtTxtString + str(valueI)
+            PtTxtString = PtTxtString + ',J,'   
+            if valueJ < 10:
+                PtTxtString = PtTxtString + "  "+str(valueJ)
+            elif valueJ >= 10 and valueJ < 100:
+                PtTxtString = PtTxtString + " "+str(valueJ)
+            else:
+                PtTxtString = PtTxtString + str(valueJ)
+            PtTxtList.append(PtTxtString+"\n")
+            FIDList.append(int(row.GetValue("FID")))
             cur.UpdateRow(row)
             row = cur.Next()
         del cur    
@@ -317,8 +330,6 @@ try:
 
         # reads in seastate data from WW3
         SSTables = open(SeastateTxt,"r")
-        CapWEArray = []
-
         # read in x and y lists only once
         listID = SSTables.readline()
         arrayX = SSTables.readline()
@@ -328,84 +339,69 @@ try:
         del listID
         SSTables.close()
 
-        # reopen WaveData and read entire file
-        SSTables = open(SeastateTxt,"r")
-        text = SSTables.read()
-
-        for Count in range(0,PointCount):
-            # benchmark
-            if int(PointCount*0.25) == Count:
-                gp.AddMessage("...25% completed")
-            elif int(PointCount*0.50) == Count:
-                gp.AddMessage("...50% completed")
-            elif int(PointCount*0.75) == Count:
-                gp.AddMessage("...75% completed")
-            
-            # find I and J in txt document
-            if PointArray[Count][0] < 10:
-                I="  "+str(int(PointArray[Count][0]))
-            elif PointArray[Count][0] >= 10 and PointArray[Count][0] < 100:
-                I=" "+str(int(PointArray[Count][0]))
-            else:
-                I=str(int(PointArray[Count][0]))
-            if PointArray[Count][1] < 10:
-                J="  "+str(int(PointArray[Count][1]))
-            elif PointArray[Count][1] >= 10 and PointArray[Count][1] < 100:
-                J=" "+str(int(PointArray[Count][1]))
-            else:
-                J=str(int(PointArray[Count][1]))
-                
-            # compare I and J values with PointArray values
-            start = "I,"+str(I)+",J,"+str(J)
-            indexS = text.find(start)
-            stringZ = text[indexS+475:indexS+5765]
-
-            # create Z array    
-            linesZ = stringZ.split("\n")
-            arrayZ = []
-            for i in range(0,21):
-                temp_line = linesZ[i].split(",")
+        counter = 25
+        for line in open(SeastateTxt,"r"):
+            if line in PtTxtList:
+                indexed = PtTxtList.index(line)
+                counter = 0
+                arrayZ = []
+            if counter > 2 and counter < 24:
+                temp_line = line.split(",")
                 arrayZ.append(temp_line)
-            arrayZ = np.array(arrayZ, dtype='f')
-
-            # set parameter max limits for each seastate table
-            for row in range(0,21):
-                for col in range(0,21):
-                    if col >= index_Tp:
-                        arrayZ[row][col] = 0.0
-                    if row >= index_Hs:
-                        arrayZ[row][col] = 0.0      
-                        
-            # divide Z data by 5 to get yearly average
-            arrayZ = np.divide(arrayZ, 5.0)
-           
-            # interpolation and calculate cap wave energy
-            ip = interp2d(x_array, y_array, z_array, kind = 'cubic', copy = True, bounds_error = False, fill_value = 0.0)
-            z_Range_intp = ip(arrayX, arrayY)
-            z_Array_Intp = np.array(z_Range_intp)
-            capwave_Array = arrayZ*z_Array_Intp
-            capwave_Array = np.where(capwave_Array < 0, 0, capwave_Array)
+                
+           # increase counter by 1
+            counter += 1
             
-            # assign CWE value to PointArray 
-            PointArray[Count][2] = (capwave_Array.sum()/1000)
+            if counter == 24:
+                arrayZ = np.array(arrayZ, dtype='f')
 
-            # populate PointArray data into shapefile
-            I = int(PointArray[Count][0])
-            J = int(PointArray[Count][1])
-            CapWESum = PointArray[Count][2]
+                # set parameter max limits for each seastate table
+                for row in range(0,21):
+                    for col in range(0,21):
+                        if col >= index_Tp:
+                            arrayZ[row][col] = 0.0
+                        if row >= index_Hs:
+                            arrayZ[row][col] = 0.0
 
-            SrchCondition = "I = " +str(I)+ " AND J = "+str(J)
-            cur = gp.UpdateCursor(WaveData_clipZ, SrchCondition, "", "I; J; CAPWE_MWHY")
-            row = cur.Next()
-            row.SetValue("CAPWE_MWHY", CapWESum)
+                # divide Z data by 5 to get yearly average
+                arrayZ = np.divide(arrayZ, 5.0)
+
+                # interpolation and calculate cap wave energy
+                ip = interp2d(x_array, y_array, z_array, kind = 'cubic', copy = True, bounds_error = False, fill_value = 0.0)
+                z_Range_intp = ip(arrayX, arrayY)
+                z_Array_Intp = np.array(z_Range_intp)
+                capwave_Array = arrayZ*z_Array_Intp
+                capwave_Array = np.where(capwave_Array < 0, 0, capwave_Array)
+
+                # assign CWE value to 'CapWEList' 
+                CapWEList[indexed] = (capwave_Array.sum()/1000)
+                counter = 25              
+
+                # benchmark
+                count += 1
+                if int(PointCount*0.25) == count:
+                    gp.AddMessage("...25% completed")
+                elif int(PointCount*0.50) == count:
+                    gp.AddMessage("...50% completed")
+                elif int(PointCount*0.75) == count:
+                    gp.AddMessage("...75% completed")
+
+        # sort lists by FID
+        WEPtsZip = zip(FIDList, CapWEList, PtStrList, PtTxtList)
+        WEPtsZip.sort()
+        FIDList, CapWEList, PtStrList, PtTxtList = zip(*WEPtsZip)
+
+        cur = gp.UpdateCursor(WaveData_clipZ)
+        row = cur.Next()
+        m = 0
+        while row:
+            row.SetValue("CAPWE_MWHY", CapWEList[m])
             cur.UpdateRow(row)
-            
-        SSTables.close()    
-        del cur
-        del row
-        del PointArray
+            row = cur.next()
+            m += 1
+        del cur, row
         del arrayZ
-        return WaveData_clipZ    
+        return WaveData_clipZ
 
 ##############################################################################################################################
 
@@ -703,8 +699,50 @@ try:
         CWEExpr = "1 "+str(int(CWEPctList[0]))+" 1;"+str(int(CWEPctList[0]))+" "+str(int(CWEPctList[1]))+" 2;"+str(int(CWEPctList[1]))+" "\
                  +str(int(CWEPctList[2]))+" 3;"+str(int(CWEPctList[2]))+" "+str(int(CWEPctList[3]))+" 4;"+str(int(CWEPctList[3]))+" "\
                  +str(int(max(CWEList)))+" 5"
+
+        # reclassify wave power outputs
         gp.Reclassify_sa(outputWP, "VALUE", WPExpr, outputWP_rc, "DATA")
+        outputWP_rc = AddField(outputWP_rc, "VAL_RANGE", "TEXT", "75", "")
+        cur = gp.UpdateCursor(outputWP_rc)
+        row = cur.Next()
+        while row:
+            WPValue = row.GetValue("VALUE")
+            if WPValue == 1:
+                row.SetValue("VAL_RANGE", "1 - "+str(WPPctList[0])+" kilowatts per square meter (kW/m)")
+            elif WPValue == 2:
+                row.SetValue("VAL_RANGE", str(WPPctList[0])+" - "+str(WPPctList[1])+" kW/m")
+            elif WPValue == 3:
+                row.SetValue("VAL_RANGE", str(WPPctList[1])+" - "+str(WPPctList[2])+" kW/m")
+            elif WPValue == 4:
+                row.SetValue("VAL_RANGE", str(WPPctList[2])+" - "+str(WPPctList[3])+" kW/m")
+            elif WPValue == 5:
+                row.SetValue("VAL_RANGE", "Greater than "+str(WPPctList[3])+" kW/m")
+            cur.UpdateRow(row)
+            row = cur.next()
+        del row
+        del cur
+        
+        # reclassify captured wave energy outputs
         gp.Reclassify_sa(outputCWE, "VALUE", CWEExpr, outputCWE_rc, "DATA")
+        outputCWE_rc = AddField(outputCWE_rc, "VAL_RANGE", "TEXT", "75", "")
+        cur = gp.UpdateCursor(outputCWE_rc)
+        row = cur.Next()
+        while row:
+            CWEValue = row.GetValue("VALUE")
+            if CWEValue == 1:
+                row.SetValue("VAL_RANGE", "1 - "+str(CWEPctList[0])+" megawatt hours per year (MWh/yr)")
+            elif CWEValue == 2:
+                row.SetValue("VAL_RANGE", str(CWEPctList[0])+" - "+str(CWEPctList[1])+" (MWh/yr)")
+            elif CWEValue == 3:
+                row.SetValue("VAL_RANGE", str(CWEPctList[1])+" - "+str(CWEPctList[2])+" (MWh/yr)")
+            elif CWEValue == 4:
+                row.SetValue("VAL_RANGE", str(CWEPctList[2])+" - "+str(CWEPctList[3])+" (MWh/yr)")
+            elif CWEValue == 5:
+                row.SetValue("VAL_RANGE", "Greater than "+str(CWEPctList[3])+" (MWh/yr)")
+            cur.UpdateRow(row)
+            row = cur.next()
+        del row
+        del cur
     except:
         raise Exception, msgWEcalc
     
@@ -893,7 +931,9 @@ try:
 
             # reclass NPV raster
             gp.BuildRasterAttributeTable_management(outputNPV, "Overwrite")
-            outputNPV = AddField(outputNPV, "NPV_BREAKS", "SHORT", "", "")            
+
+            outputNPV = AddField(outputNPV, "NPV_BREAKS", "SHORT", "", "")
+            outputNPV = AddField(outputNPV, "YR_NET_VAL", "FLOAT", "", "") ## FIX FOR CK 
             NPVList = []
             cur = gp.UpdateCursor(outputNPV)
             row = cur.Next()
@@ -902,16 +942,22 @@ try:
                 if row.GetValue("VALUE") > 0:
                     for i in range(CellCount):
                         NPVList.append(row.GetValue("VALUE"))
+                        
+                ## FIX FOR CK # AnnualNetValue= NPV*(r*(1+r)^T) / ((1+r)^T-1)
+                ## FIX FOR CK # r = discount rate ## FIX FOR CK
+                ## FIX FOR CK # T = duration of WE project ## FIX FOR CK
+                row.SetValue("YR_NET_VAL", ((row.GetValue("VALUE")*1000.0)*(r*(1+r)**25.0) / ((1+r)**25.0-1))/1000.0) ## FIX FOR CK
                 cur.UpdateRow(row)
                 row = cur.next()
             del row
             del cur
+
+            gp.Lookup_sa(outputNPV, "YR_NET_VAL", netval_yr) ## FIX FOR CK
             
             NPVPctList = getPercentiles(NPVList)
             cur = gp.UpdateCursor(outputNPV)
             row = cur.Next()
             while row:
-                # wind ranks
                 NPVValue = row.GetValue("VALUE")
                 if NPVValue < 1:
                     row.SetValue("NPV_BREAKS", 0)
@@ -930,8 +976,29 @@ try:
             del row
             del cur
 
+            # reclass NPV output (5 classes)
             NPVExpr = "1 1;2 2;3 3;4 4;5 5"
             gp.Reclassify_sa(outputNPV, "NPV_BREAKS", NPVExpr, outputNPV_rc, "NODATA")
+            outputNPV_rc = AddField(outputNPV_rc, "VAL_RANGE", "TEXT", "75", "")
+            cur = gp.UpdateCursor(outputNPV_rc)
+            row = cur.Next()
+            while row:
+                NPVValue = row.GetValue("VALUE")
+                if NPVValue == 1:
+                    row.SetValue("VAL_RANGE", "1 - "+str(NPVPctList[0])+" thousands of US dollars (US$)")
+                elif NPVValue == 2:
+                    row.SetValue("VAL_RANGE", str(NPVPctList[0])+" - "+str(NPVPctList[1])+" thousands of US$")
+                elif NPVValue == 3:
+                    row.SetValue("VAL_RANGE", str(NPVPctList[1])+" - "+str(NPVPctList[2])+" thousands of US$")
+                elif NPVValue == 4:
+                    row.SetValue("VAL_RANGE", str(NPVPctList[2])+" - "+str(NPVPctList[3])+" thousands of US$")
+                elif NPVValue == 5:
+                    row.SetValue("VAL_RANGE", "Greater than "+str(NPVPctList[3])+" thousands of US$")
+                cur.UpdateRow(row)
+                row = cur.next()
+            del row
+            del cur
+            
     except:
         raise Exception, msgValuation
     

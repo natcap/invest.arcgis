@@ -1,7 +1,7 @@
 # Marine InVEST: Fetch Calculator Tool
 # Authors: Gregg Verutes, Greg Guannel, Jeremy Davies 
 # Coded for ArcGIS 9.3 and 10
-# 05/09/11
+# 01/13/11
 
 from CPf_FetchTools import fetchGeoprocessor
 import sys, string, os, datetime, array, time, datetime
@@ -22,7 +22,6 @@ gp.CheckOutExtension("conversion")
 
 # error messages
 msgArguments = "\nProblem with arguments."
-msgCheckGeom = "\nError checking the geometry of inputs."
 msgCheckDatum = "\nError checking the datum of inputs."
 msgDataPrep = "\nError preparing the data inputs."
 msgFetchCalc = "\nError calculating fetch distances."
@@ -51,7 +50,8 @@ try:
         parameters.append("Date and Time: "+ now.strftime("%Y-%m-%d %H:%M"))
         gp.workspace = gp.GetParameterAsText(0)
         parameters.append("Workspace: "+ gp.workspace)
-        gp.scratchWorkspace = gp.GetParameterAsText(0)
+        gp.CreateFolder_management(gp.workspace, "scratch")
+        gp.scratchWorkspace = gp.workspace + os.sep + "scratch" 
         parameters.append("Scratch Workspace: "+ gp.scratchWorkspace)
         landPoly = gp.GetParameterAsText(1)
         parameters.append("Land Polygon: "+ landPoly)
@@ -112,10 +112,6 @@ try:
         gp.AddError("A scratch workspace must be defined in you Environment Settings for this script to function properly.")
         raise Exception
 
-    def checkGeometry(thedata, Type, Message):
-        if gp.Describe(thedata).ShapeType <> Type:
-            raise Exception, "\nInvalid input: "+thedata+"\n"+Message+" must be of geometry type "+Type+"."
-
     def checkDatum(thedata):
         desc = gp.describe(thedata)
         SR = desc.SpatialReference
@@ -131,7 +127,17 @@ try:
         if strDatum == "D_WGS_1984":
             pass
         else:
-            gp.AddError(thedata+" is not a valid input.\nThe model requires data inputs and a projection with the \"WGS84\" datum.\nPlease review InVEST FAQ guide on how to reproject datasets.")
+            gp.AddError(thedata+" is not a valid input.\nThe model requires data inputs and a projection with the \"WGS84\" datum.\nPlease review InVEST FAQ guide on how to transform a layer's datum.")
+            raise Exception
+
+    def ckProjection(data):
+        dataDesc = gp.describe(data)
+        spatreflc = dataDesc.SpatialReference
+        if spatreflc.Type <> 'Projected':
+            gp.AddError(data +" does not appear to be projected.  It is assumed to be in meters.")
+            raise Exception
+        if spatreflc.LinearUnitName <> 'Meter':
+            gp.AddError("This model assumes that "+data+" is projected in meters for area calculations.  You may get erroneous results.")
             raise Exception
 
     def grabProjection(data):
@@ -301,15 +307,6 @@ try:
 
     try:
         gp.AddMessage("\nChecking inputs and preparing data...")
-        # check geometry
-        checkGeometry(landPoly, "Polygon", "Land Polygon")
-        checkGeometry(landLine, "Polyline", "Land Polyline")
-        checkGeometry(AOI, "Polygon", "Area of Interest (AOI)")
-    except:
-        gp.AddError(msgCheckGeom)
-        raise Exception
-
-    try:
         # check the datum of certain inputs
         theinputs=[landPoly, landLine, AOI]
         for input in theinputs:
@@ -330,6 +327,7 @@ try:
 
     try:
         # prepare the data
+        ckProjection(AOI)
         projection = grabProjection(AOI)
         gp.Clip_analysis(landLine, AOI, landLine_clip, "")
         if areaFilter:
@@ -381,17 +379,17 @@ try:
             calcSingle(landsea_rst, windDir, windDirInt, fetchpath)
 
         for i in range(0,len(dirList)):
-            gp.Reclassify_sa(fetchpath+"\\"+dirList[i], "Value", "-1000000 0 20000;0 250 0; 250 1000 625;1000 2000 1500;\
+            gp.Reclassify_sa(fetchpath+"\\"+dirList[i], "Value", "-10000000000 0 50000;0 250 0; 250 1000 625;1000 2000 1500;\
                                                                   2000 3000 2500;3000 4000 3500;4000 5000 4500;5000 6000 5500;\
                                                                   6000 7000 6500;7000 8000 7500;8000 9000 8500;9000 10000 9500;\
                                                                   10000 11000 10500;11000 12000 11500;12000 13000 12500;\
                                                                   13000 14000 13500;14000 15000 14500;15000 16000 15500;\
                                                                   16000 17000 16500;17000 18000 17500;18000 19000 18500;\
-                                                                  19000 20000 19500;20000 10000000 20000", fetchpath+"\\"+dirList[i]+"_rc", "DATA")
+                                                                  19000 20000 19500;20000 10000000000 50000", fetchpath+"\\"+dirList[i]+"_rc", "DATA")
             
             gp.Expand_sa(fetchpath+"\\"+dirList[i]+"_rc", fetchpath+"\\"+dirList[i]+"_e", "2", "0; \
                                                           625;1500;2500;3500;4500;5500;6500;7500;8500;9500;10500;\
-                                                          11500;12500;13500;14500;15500;16500;17500;18500;19500;20000")
+                                                          11500;12500;13500;14500;15500;16500;17500;18500;19500;50000")
         del gp
         
     except:
