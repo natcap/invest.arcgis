@@ -2,7 +2,7 @@ InVEST 3.1.2 is a minor release patching issues mostly related to the freshwater
 
 * Patching an issue where some projections were not regognized and InVEST reported an UnprojectedError.
 * Updates to logging that make it easier to capture logging messages when scripting InVEST.
-* Shortened water yield user interface height so it doesn’t waste whitespace.
+* Shortened water yield user interface height so it doesn't waste whitespace.
 * Update PyGeoprocessing dependency to version 0.2.0.
 * Fixed an InVEST wide issue related to bugs stemming from the use of signed byte raster inputs that resulted in nonsensical outputs or KeyErrors.
 * Minor performance updates to carbon model.
