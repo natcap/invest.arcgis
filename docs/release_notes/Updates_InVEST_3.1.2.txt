@@ -1,0 +1,11 @@
+InVEST 3.1.2 is a minor release patching issues mostly related to the freshwater routing models and signed GDAL Byte datasets.
+
+* Updates to logging that make it easier to capture logging messages when scripting InVEST.
+* Shortened water yield user interface height so it doesn’t waste whitespace.
+* Update PyGeoprocessing dependency to version 0.2.0.
+* Fixed an InVEST wide issue related to bugs stemming from the use of signed byte raster inputs that resulted in nonsensical outputs or KeyErrors.
+* Minor performance updates to carbon model.
+* Fixed an issue where DEMS with 32 bit ints and INT_MAX as the nodata value nodata value incorrectly treated the nodata value in the raster as a very large DEM value ultimately resulting in rasters that did not drain correctly and empty flow accumulation rasters.
+* Fixed an issue where some reservoirs whose edges were clipped to the edge of the watershed created large plateaus with no drain except off the edge of the defined raster.  Added a second pass in the plateau drainage algorithm to test for these cases and drains them to an adjacent nodata area if they occur.
+* Fixed an issue in the Fisheries model where the Results Suffix input was invariably initializing to an empty string.
+* Fixed an issue in the Blue Carbon model that prevented the report from being generated in the outputs file.
