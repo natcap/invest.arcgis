@@ -1,0 +1,7 @@
+InVEST 3.2.0 is a major release with the addition of several experimental models and tools and an upgrade to the PyGeoprocessing core.  Specifically:
+
+* InVEST now uses PyGeoprocessing v0.3.0a1 that contains miscelaneous performance improvements to the core geoprocessing library.
+* DelinateIT, a watershed delination tool based on PyGeoprocessing's d-infinity flow algorithm is released as a standalone tool in the InVEST repository.
+* An alpha unstable build of a crop production model is released.
+* An alpha unstable build of the nutrient delivery ratio (NDR) model is available directly under InVEST's instalation directory at  invest-x86/invest_ndr.exe; eventually this model will replace InVEST's current "Nutrient" model.  It is currently undocumented and unsupported but inputs are similar to that of InVEST's SDR model.
+* Miscelaneous performance patches and bug fixes.
